@@ -1,5 +1,3 @@
-import { kv } from '@vercel/kv';
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -7,38 +5,41 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { password, className } = req.body;
-
-  // Check teacher password
+  const { password } = req.body;
   const teacherPassword = process.env.TEACHER_PASSWORD || 'daryn2025';
-  if (password !== teacherPassword) {
-    return res.status(401).json({ error: 'Құпиясөз қате!' });
-  }
+  if (password !== teacherPassword) return res.status(401).json({ error: 'Құпиясөз қате!' });
+
+  const url = process.env.KV_REST_API_URL;
+  const token = process.env.KV_REST_API_TOKEN;
+  if (!url || !token) return res.status(500).json({ error: 'DB not configured' });
 
   try {
     // Get all student keys
-    const allKeys = await kv.smembers('all_students');
+    const keysRes = await fetch(`${url}/smembers/all_students`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const keysData = await keysRes.json();
+    const keys = keysData.result || [];
 
-    if (!allKeys || allKeys.length === 0) {
-      return res.status(200).json({ students: [], classes: [] });
+    if (keys.length === 0) return res.status(200).json({ students: [], classes: [] });
+
+    // Get all student data
+    const students = [];
+    for (const key of keys) {
+      const r = await fetch(`${url}/get/${encodeURIComponent(key)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const d = await r.json();
+      if (d.result) {
+        try { students.push(JSON.parse(d.result)); } catch(e) {}
+      }
     }
 
-    // Fetch all student data
-    const studentDataRaw = await Promise.all(
-      allKeys.map(key => kv.get(key))
-    );
-
-    const students = studentDataRaw
-      .filter(Boolean)
-      .map(d => typeof d === 'string' ? JSON.parse(d) : d)
-      .sort((a, b) => (b.totalPct || 0) - (a.totalPct || 0));
-
-    // Get unique class names
+    students.sort((a, b) => (b.totalPct || 0) - (a.totalPct || 0));
     const classes = [...new Set(students.map(s => s.className))].sort();
 
     return res.status(200).json({ students, classes });
   } catch (error) {
-    console.error('KV Error:', error);
-    return res.status(500).json({ error: 'Failed to fetch data' });
+    return res.status(500).json({ error: 'Failed to fetch' });
   }
 }

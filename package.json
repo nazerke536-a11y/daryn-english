@@ -1,7 +1,6 @@
 {
   "name": "daryn-english-olympiad",
-  "version": "1.0.0",
-  "description": "Daryn.kz English Olympiad Preparation App for Kazakh students",
+  "version": "4.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@vercel/kv": "^2.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

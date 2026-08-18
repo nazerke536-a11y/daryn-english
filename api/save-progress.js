@@ -5,34 +5,45 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { studentName, className, grade, scores, totalPct } = req.body;
-  if (!studentName || !className) return res.status(400).json({ error: 'Missing fields' });
+  const { password } = req.body;
+  const teacherPassword = process.env.TEACHER_PASSWORD || 'daryn2025';
+  if (password !== teacherPassword) return res.status(401).json({ error: 'Құпиясөз қате!' });
 
   const url = process.env.KV_REST_API_URL;
   const token = process.env.KV_REST_API_TOKEN;
   if (!url || !token) return res.status(500).json({ error: 'DB not configured' });
 
   try {
-    const key = `student:${className}:${studentName}`;
-    const data = JSON.stringify({
-      studentName, className, grade, scores, totalPct,
-      updatedAt: new Date().toISOString(),
+    // Get all student keys
+    const keysRes = await fetch(`${url}/smembers/all_students`, {
+      headers: { Authorization: `Bearer ${token}` }
     });
+    const keysData = await keysRes.json();
+    const keys = keysData.result || [];
 
-    await fetch(`${url}/set/${encodeURIComponent(key)}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value: data })
-    });
+    if (keys.length === 0) return res.status(200).json({ students: [], classes: [] });
 
-    await fetch(`${url}/sadd/all_students`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ members: [key] })
-    });
+    // Get each student's data
+    const students = [];
+    for (const key of keys) {
+      const r = await fetch(`${url}/get/${encodeURIComponent(key)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const d = await r.json();
+      if (d.result) {
+        try {
+          const parsed = JSON.parse(d.result);
+          students.push(parsed);
+        } catch(e) {}
+      }
+    }
 
-    return res.status(200).json({ success: true });
+    students.sort((a, b) => (b.totalPct || 0) - (a.totalPct || 0));
+    const classes = [...new Set(students.map(s => s.className))].sort();
+
+    return res.status(200).json({ students, classes });
   } catch (error) {
-    return res.status(500).json({ error: 'Failed to save' });
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to fetch' });
   }
 }

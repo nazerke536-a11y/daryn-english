@@ -6,24 +6,38 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { password } = req.body;
+
+  // Debug: log what we receive
+  console.log('Received password:', password);
+  console.log('Expected password:', process.env.TEACHER_PASSWORD);
+
   const teacherPassword = process.env.TEACHER_PASSWORD || 'daryn2025';
-  if (password !== teacherPassword) return res.status(401).json({ error: 'Құпиясөз қате!' });
+
+  if (!password || password.trim() !== teacherPassword.trim()) {
+    return res.status(401).json({
+      error: 'Құпиясөз қате!',
+      hint: `Expected length: ${teacherPassword.length}, Got length: ${password ? password.length : 0}`
+    });
+  }
 
   const url = process.env.KV_REST_API_URL;
   const token = process.env.KV_REST_API_TOKEN;
-  if (!url || !token) return res.status(500).json({ error: 'DB not configured' });
+
+  if (!url || !token) {
+    return res.status(500).json({ error: 'DB not configured', url: !!url, token: !!token });
+  }
 
   try {
-    // Get all student keys
     const keysRes = await fetch(`${url}/smembers/all_students`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     const keysData = await keysRes.json();
     const keys = keysData.result || [];
 
-    if (keys.length === 0) return res.status(200).json({ students: [], classes: [] });
+    if (keys.length === 0) {
+      return res.status(200).json({ students: [], classes: [] });
+    }
 
-    // Get all student data
     const students = [];
     for (const key of keys) {
       const r = await fetch(`${url}/get/${encodeURIComponent(key)}`, {
@@ -40,6 +54,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ students, classes });
   } catch (error) {
-    return res.status(500).json({ error: 'Failed to fetch' });
+    console.error(error);
+    return res.status(500).json({ error: error.message });
   }
 }
